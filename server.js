@@ -74,7 +74,7 @@ const PRIZES = {
 
 app.set('trust proxy', 1);
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: false }));
 app.use(session({
   store: new SQLiteStore({ db: 'sessions.sqlite', dir: DATA_DIR }),
   secret: process.env.SESSION_SECRET || 'please-change-this-session-secret',
@@ -531,28 +531,53 @@ app.post('/admin/backup/run', requireBackupAdmin, async (req, res) => {
     );
   }
 });
-/* 管理員測試帳號抽獎重置 */
+/* 管理員指定帳號抽獎重置 */
 
 app.get('/admin/test-reset', requireBackupAdmin, (req, res) => {
   res.send(`
-    <h2>TINA SHOP 測試帳號重置</h2>
-    <p>只會清除目前管理員 Discord 帳號的抽獎紀錄。</p>
-    <p>如果抽到有限數量的獎項，會將庫存加回一份。</p>
-    <form method="POST" action="/admin/test-reset">
-      <button type="submit">清除我的測試抽獎紀錄</button>
-    </form>
-    <p><a href="/admin/backup">返回備份管理</a></p>
+    <!DOCTYPE html>
+    <html lang="zh-Hant">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>TINA SHOP 測試帳號重置</title>
+    </head>
+    <body style="font-family:Arial;text-align:center;padding:40px;background:#fff5f8;">
+      <h2>TINA SHOP 測試帳號重置</h2>
+      <p>請輸入想清除的 Discord 使用者 ID。</p>
+      <form method="POST" action="/admin/test-reset">
+        <input
+          type="text"
+          name="targetDiscordId"
+          placeholder="輸入 Discord 使用者 ID"
+          required
+          pattern="[0-9]{17,20}"
+          style="padding:12px;width:280px;max-width:90%;"
+        >
+        <br><br>
+        <button type="submit" style="padding:12px 24px;">
+          清除指定帳號紀錄
+        </button>
+      </form>
+      <p>只會清除指定帳號，不會影響其他會員。</p>
+      <a href="/admin/backup">返回備份管理</a>
+    </body>
+    </html>
   `);
 });
 
 app.post('/admin/test-reset', requireBackupAdmin, (req, res) => {
   try {
-    const userId = req.session.discordUser.id;
+    const targetId = String(req.body.targetDiscordId || '').trim();
+
+    if (!/^[0-9]{17,20}$/.test(targetId)) {
+      return res.status(400).send('Discord 使用者 ID 格式不正確。');
+    }
 
     const reset = db.transaction(() => {
       const draw = db.prepare(
         'SELECT prize_id FROM draws WHERE discord_id = ?'
-      ).get(userId);
+      ).get(targetId);
 
       if (!draw) {
         return false;
@@ -560,7 +585,7 @@ app.post('/admin/test-reset', requireBackupAdmin, (req, res) => {
 
       db.prepare(
         'DELETE FROM draws WHERE discord_id = ?'
-      ).run(userId);
+      ).run(targetId);
 
       db.prepare(`
         UPDATE inventory
@@ -574,40 +599,12 @@ app.post('/admin/test-reset', requireBackupAdmin, (req, res) => {
     const deleted = reset();
 
     res.send(deleted
-      ? '<h2>測試帳號紀錄已清除！</h2><p>現在可以重新抽獎。</p><a href="/">返回首頁</a>'
-      : '<h2>沒有找到抽獎紀錄。</h2><a href="/">返回首頁</a>'
+      ? '<h2>指定帳號紀錄已清除！</h2><p>該帳號現在可以重新抽獎。</p><a href="/admin/test-reset">返回重置頁面</a>'
+      : '<h2>找不到該帳號的抽獎紀錄。</h2><a href="/admin/test-reset">返回重置頁面</a>'
     );
 
   } catch (error) {
-    console.error('測試帳號重置失敗：', error);
+    console.error('指定帳號重置失敗：', error);
     res.status(500).send('重置失敗，請查看 Render Logs。');
   }
-});
-/* 每 24 小時自動備份一次 */
-
-const BACKUP_INTERVAL = 24 * 60 * 60 * 1000;
-
-setInterval(async () => {
-  try {
-    const savedAuth = db.prepare(
-      'SELECT refresh_token FROM google_drive_auth WHERE id = 1'
-    ).get();
-
-    if (!savedAuth?.refresh_token) {
-      console.log('尚未完成 Google Drive 授權，暫不執行自動備份。');
-      return;
-    }
-
-    await backupDatabase();
-    console.log('每日 Google Drive 自動備份完成。');
-
-  } catch (error) {
-    console.error('每日 Google Drive 自動備份失敗：', error);
-  }
-}, BACKUP_INTERVAL);
-
-/* 啟動網站 */
-
-app.listen(PORT, () => {
-  console.log(`TINA SHOP 網站已啟動，Port: ${PORT}`);
 });
