@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: tina-double11
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/me
+    disk:
+      name: tina-double11-data
+      mountPath: /data
+      sizeGB: 1
