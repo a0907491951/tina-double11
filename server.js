@@ -4,6 +4,8 @@ const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const Database = require('better-sqlite3');
 const crypto = require('crypto');
+const { google } = require('googleapis');
+const os = require('os');
 const path = require('path');
 
 const app = express();
@@ -31,7 +33,51 @@ const PRIZES = {
   half: { name: '半價優惠', detail: '可選擇一項商品，享半價優惠' },
   gift: { name: '限定小禮物', detail: '可用 11 WC 帶走限定小禮物' }
 };
+// Google Drive 備份設定
+const backupAuth = new google.auth.GoogleAuth({
+  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+scopes: ['https://www.googleapis.com/auth/drive']
+});
 
+const drive = google.drive({
+  version: 'v3',
+  auth: backupAuth
+});
+
+const BACKUP_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+// SQLite 安全備份至 Google Drive
+async function backupDatabase() {
+  if (!BACKUP_FOLDER_ID) {
+    throw new Error('缺少 Google Drive 資料夾 ID');
+  }
+
+  const backupPath = path.join(
+    os.tmpdir(),
+    `tina-double11-${Date.now()}.sqlite`
+  );
+
+  try {
+    await db.backup(backupPath);
+
+    const result = await drive.files.create({
+      requestBody: {
+        name: `TINA-SHOP-${new Date().toISOString()}.sqlite`,
+        mimeType: 'application/vnd.sqlite3',
+        parents: [BACKUP_FOLDER_ID]
+      },
+      media: {
+        mimeType: 'application/vnd.sqlite3',
+        body: fs.createReadStream(backupPath)
+      },
+      fields: 'id, name'
+    });
+
+    console.log('Google Drive 備份成功：', result.data.name);
+    return result.data;
+  } finally {
+    await fs.promises.rm(backupPath, { force: true });
+  }
+}
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(session({
@@ -97,10 +143,26 @@ const drawTransaction = db.transaction((user) => {
   db.prepare('INSERT INTO draws (discord_id, username, prize_id, prize_name) VALUES (?, ?, ?, ?)').run(user.id, user.username, selected.prize_id, name);
   return { already: false, prize: { prize_id: selected.prize_id, prize_name: name, detail: PRIZES[selected.prize_id].detail } };
 });
-app.post('/api/scratch', (req, res) => {
-  if (!req.session.discordUser) return res.status(401).json({ error: '請先使用 Discord 登入。' });
-  try { const result = drawTransaction(req.session.discordUser); res.json(result); }
-  catch (e) { res.status(409).json({ error: e.message || '抽獎失敗，請稍後再試。' }); }
+app.post('/api/scratch', async (req, res) => {
+  if (!req.session.discordUser) {
+    return res.status(401).json({ error: '請先使用 Discord 登入。' });
+  }
+
+  try {
+    const result = drawTransaction(req.session.discordUser);
+
+    if (!result.already) {
+      backupDatabase().catch(err => {
+        console.error('Google Drive 備份失敗：', err);
+      });
+    }
+
+    res.json(result);
+  } catch (e) {
+    res.status(409).json({
+      error: e.message || '抽獎失敗，請稍後再試。'
+    });
+  }
 });
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
 app.listen(PORT, () => console.log(`Tina Double11 listening on ${PORT}`));
