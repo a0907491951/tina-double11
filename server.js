@@ -460,7 +460,14 @@ app.post('/api/scratch', (req, res) => {
       error: '請先使用 Discord 登入。'
     });
   }
+  // 活動截止時間：2026/11/21 23:23 台灣時間
+  const EVENT_END = new Date('2026-11-21T23:23:00+08:00');
 
+  if (Date.now() >= EVENT_END.getTime()) {
+    return res.status(403).json({
+      error: '活動已結束，感謝參與 TINA SHOP！'
+    });
+  }
   try {
     const result = drawTransaction(req.session.discordUser);
     return res.json(result);
