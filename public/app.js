@@ -6,3 +6,34 @@ function reveal(){if(revealed)return;revealed=true;ctx.clearRect(0,0,canvas.widt
 async function loadMe(){try{const r=await fetch('/api/me');const d=await r.json();if(!d.loggedIn)return;loginArea.classList.add('hidden');userArea.classList.remove('hidden');welcome.textContent=`歡迎回來，${d.user.username} ♡`;if(d.draw){drawResult={prize_name:d.draw.prize_name};prizeName.textContent=d.draw.prize_name;prizeDetail.textContent='這是你已經抽中的獎項，請截圖保存！';scratchBtn.textContent='查看我的獎項';scratchBtn.disabled=true;hint.textContent='每個 Discord 帳號限抽一次';setTimeout(reveal,250)}else{paintCover();hint.textContent='按下開始抽獎後，刮開卡片查看結果'}}catch(e){console.error(e)}}
 scratchBtn.addEventListener('click',async()=>{if(drawResult){reveal();return}scratchBtn.disabled=true;scratchBtn.textContent='幸運抽取中…';try{const r=await fetch('/api/scratch',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const d=await r.json();if(!r.ok)throw new Error(d.error||'抽獎失敗');drawResult=d.prize;prizeName.textContent=d.prize.prize_name;prizeDetail.textContent=d.prize.detail||'請截圖保存並聯絡踢吶兌獎 ♡';scratchBtn.textContent='已抽出獎項';hint.textContent='用手指或滑鼠刮開上方卡片！';if(d.already){scratchBtn.disabled=true;setTimeout(reveal,300)}else{scratchBtn.disabled=true}}catch(e){alert(e.message);scratchBtn.disabled=false;scratchBtn.textContent='重新抽取'}});
 window.addEventListener('resize',()=>{if(!drawResult&&!revealed&&canvas.style.display!=='none')paintCover()});paintCover();loadMe();
+
+/* TINA SHOP 活動截止設定 */
+const EVENT_END_TIME = new Date('2026-11-21T23:23:00+08:00');
+
+function checkEventEnd() {
+  if (Date.now() < EVENT_END_TIME.getTime()) return;
+
+  let notice = document.getElementById('eventEndedNotice');
+
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.id = 'eventEndedNotice';
+    notice.textContent = '活動已結束，感謝參與 TINA SHOP！♡';
+    notice.style.cssText =
+      'text-align:center;color:#f5b6e8;font-weight:bold;margin:20px;';
+
+    document.querySelector('.hero')?.appendChild(notice);
+  }
+
+  if (!drawResult) {
+    loginArea.classList.add('hidden');
+    scratchBtn.disabled = true;
+    scratchBtn.textContent = '活動已結束';
+    canvas.style.display = 'none';
+    hint.textContent = '活動已結束，感謝參與 TINA SHOP！';
+
+  }
+}
+
+checkEventEnd();
+setInterval(checkEventEnd, 10000);
