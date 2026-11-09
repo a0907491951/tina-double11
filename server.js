@@ -531,7 +531,58 @@ app.post('/admin/backup/run', requireBackupAdmin, async (req, res) => {
     );
   }
 });
+/* 管理員測試帳號抽獎重置 */
 
+app.get('/admin/test-reset', requireBackupAdmin, (req, res) => {
+  res.send(`
+    <h2>TINA SHOP 測試帳號重置</h2>
+    <p>只會清除目前管理員 Discord 帳號的抽獎紀錄。</p>
+    <p>如果抽到有限數量的獎項，會將庫存加回一份。</p>
+    <form method="POST" action="/admin/test-reset">
+      <button type="submit">清除我的測試抽獎紀錄</button>
+    </form>
+    <p><a href="/admin/backup">返回備份管理</a></p>
+  `);
+});
+
+app.post('/admin/test-reset', requireBackupAdmin, (req, res) => {
+  try {
+    const userId = req.session.discordUser.id;
+
+    const reset = db.transaction(() => {
+      const draw = db.prepare(
+        'SELECT prize_id FROM draws WHERE discord_id = ?'
+      ).get(userId);
+
+      if (!draw) {
+        return false;
+      }
+
+      db.prepare(
+        'DELETE FROM draws WHERE discord_id = ?'
+      ).run(userId);
+
+      db.prepare(`
+        UPDATE inventory
+        SET remaining = remaining + 1
+        WHERE prize_id = ? AND remaining >= 0
+      `).run(draw.prize_id);
+
+      return true;
+    });
+
+    const deleted = reset();
+
+    res.send(deleted
+      ? '<h2>測試帳號紀錄已清除！</h2><p>現在可以重新抽獎。</p><a href="/">返回首頁</a>'
+      : '<h2>沒有找到抽獎紀錄。</h2><a href="/">返回首頁</a>'
+    );
+
+  } catch (error) {
+    console.error('測試帳號重置失敗：', error);
+    res.status(500).send('重置失敗，請查看 Render Logs。');
+  }
+});
 /* 每 24 小時自動備份一次 */
 
 const BACKUP_INTERVAL = 24 * 60 * 60 * 1000;
