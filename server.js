@@ -608,3 +608,33 @@ app.post('/admin/test-reset', requireBackupAdmin, (req, res) => {
     res.status(500).send('重置失敗，請查看 Render Logs。');
   }
 });
+
+/* 每 24 小時自動備份一次 */
+
+const BACKUP_INTERVAL = 24 * 60 * 60 * 1000;
+
+setInterval(async () => {
+  try {
+    const savedAuth = db.prepare(
+      'SELECT refresh_token FROM google_drive_auth WHERE id = 1'
+    ).get();
+
+    if (!savedAuth?.refresh_token) {
+      console.log('尚未完成 Google Drive 授權，暫不執行自動備份。');
+      return;
+    }
+
+    await backupDatabase();
+    console.log('每日 Google Drive 自動備份完成。');
+
+  } catch (error) {
+    console.error('每日 Google Drive 自動備份失敗：', error);
+  }
+}, BACKUP_INTERVAL);
+
+
+/* 啟動網站 */
+
+app.listen(PORT, () => {
+  console.log(`TINA SHOP 網站已啟動，Port: ${PORT}`);
+});
