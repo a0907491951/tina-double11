@@ -766,6 +766,9 @@ app.get('/admin/backup', requireBackupAdmin, (req, res) => {
       <form method="POST" action="/admin/backup/run">
         <button type="submit">立即備份</button>
       </form>
+            <form method="POST" action="/admin/sheets/sync">
+        <button type="submit">立即同步 Google 試算表</button>
+      </form>
       <p><a href="/">返回網站首頁</a></p>
     </body>
     </html>
