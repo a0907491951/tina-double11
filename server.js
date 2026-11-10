@@ -39,8 +39,13 @@ db.exec(`
     refresh_token TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
-`);
 
+  CREATE TABLE IF NOT EXISTS google_sheets_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    spreadsheet_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`);
 const initial = [
   ['grand', 2, 20],
   ['discount111', 5, 20],
