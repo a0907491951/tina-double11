@@ -411,11 +411,10 @@ const { sheets, oauth2Client } = await getGoogleSheetsClient();
     throw new Error('缺少 GOOGLE_DRIVE_FOLDER_ID');
   }
 
-const { sheets, oauth2Client } = await getGoogleSheetsClient();
-    version: 'v3',
-    auth: oauth2Client
-  });
-
+const drive = google.drive({
+  version: 'v3',
+  auth: oauth2Client
+});
   const file = await drive.files.get({
     fileId: spreadsheetId,
     fields: 'parents'
