@@ -377,6 +377,7 @@ async function getGoogleSheetsClient() {
   });
 
   return { sheets, oauth2Client };
+  }
 
 async function getOrCreateGoogleSpreadsheet() {
 const { sheets, oauth2Client } = await getGoogleSheetsClient();
