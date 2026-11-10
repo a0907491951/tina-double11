@@ -348,6 +348,130 @@ async function backupDatabase() {
     await fs.promises.rm(backupPath, { force: true }).catch(() => {});
   }
 }
+
+/* ---------------- Google Sheets 自動同步 ---------------- */
+
+async function getGoogleSheetsClient() {
+  const savedAuth = db.prepare(
+    'SELECT refresh_token FROM google_drive_auth WHERE id = 1'
+  ).get();
+
+  if (!savedAuth?.refresh_token) {
+    throw new Error('尚未完成 Google 授權');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI ||
+      `${process.env.BASE_URL || 'https://tina-double11.onrender.com'}/auth/google/callback`
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: savedAuth.refresh_token
+  });
+
+    const sheets = google.sheets({
+    version: 'v4',
+    auth: oauth2Client
+  });
+
+  return { sheets, oauth2Client };
+
+async function getOrCreateGoogleSpreadsheet() {
+  const sheets = await getGoogleSheetsClient();
+
+  const saved = db.prepare(
+    'SELECT spreadsheet_id FROM google_sheets_config WHERE id = 1'
+  ).get();
+
+  if (saved?.spreadsheet_id) {
+    return {
+      sheets,
+      spreadsheetId: saved.spreadsheet_id
+    };
+  }
+
+  const created = await sheets.spreadsheets.create({
+    requestBody: {
+      properties: {
+        title: 'TINA SHOP 抽獎紀錄'
+      },
+      sheets: [
+        { properties: { title: '抽獎明細' } },
+        { properties: { title: '獎項統計' } }
+      ]
+    }
+  });
+
+  const spreadsheetId = created.data.spreadsheetId;
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+  if (!folderId) {
+    throw new Error('缺少 GOOGLE_DRIVE_FOLDER_ID');
+  }
+
+    const drive = google.drive({
+    version: 'v3',
+    auth: oauth2Client
+  });
+
+  const file = await drive.files.get({
+    fileId: spreadsheetId,
+    fields: 'parents'
+  });
+
+  await drive.files.update({
+    fileId: spreadsheetId,
+    addParents: folderId,
+    removeParents: (file.data.parents || []).join(','),
+    fields: 'id,parents'
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: '抽獎明細!A1:D1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [[
+        'Discord 名稱',
+        'Discord ID',
+        '中獎獎項',
+        '抽獎時間'
+      ]]
+    }
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: '獎項統計!A1:C1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [[
+        '獎項名稱',
+        '中獎數量',
+        '剩餘數量'
+      ]]
+    }
+  });
+
+  db.prepare(`
+    INSERT INTO google_sheets_config
+      (id, spreadsheet_id, updated_at)
+    VALUES (1, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      spreadsheet_id = excluded.spreadsheet_id,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(spreadsheetId);
+
+  console.log('Google 試算表建立成功：', spreadsheetId);
+
+  return {
+    sheets,
+    spreadsheetId
+  };
+}
+
 /* 網站 API */
 
 app.post('/auth/logout', (req, res) => {
