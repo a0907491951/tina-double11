@@ -709,16 +709,27 @@ app.post('/api/scratch', async (req, res) => {
   try {
     const result = drawTransaction(req.session.discordUser);
 
-    // 只有新抽獎成功才同步，避免重複紀錄
-    if (!result.already) {
-      try {
-        await syncGoogleSheets();
-        console.log('抽獎資料已同步至 Google Sheets');
-      } catch (syncError) {
-        // 試算表同步失敗，不影響已完成的抽獎
-        console.error('Google Sheets 同步失敗：', syncError);
-      }
-    }
+   
+// 只有新抽獎成功才執行備份與同步
+if (!result.already) {
+
+  // 1. 備份 SQLite 到 Google Drive
+  try {
+    await backupDatabase();
+    console.log('Google Drive SQLite 備份成功');
+  } catch (backupError) {
+    console.error('Google Drive 備份失敗：', backupError);
+  }
+
+  // 2. 同步抽獎明細與獎項統計
+  try {
+    await syncGoogleSheets();
+    console.log('Google Sheets 同步成功');
+  } catch (syncError) {
+    console.error('Google Sheets 同步失敗：', syncError);
+  }
+}
+
 
     return res.json(result);
 
