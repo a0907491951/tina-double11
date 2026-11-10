@@ -688,12 +688,15 @@ const drawTransaction = db.transaction(user => {
 });
 /* 抽獎 API */
 
-app.post('/api/scratch', (req, res) => {
+/* 抽獎 API */
+
+app.post('/api/scratch', async (req, res) => {
   if (!req.session.discordUser) {
     return res.status(401).json({
       error: '請先使用 Discord 登入。'
     });
   }
+
   // 活動截止時間：2026/11/21 23:23 台灣時間
   const EVENT_END = new Date('2026-11-21T23:23:00+08:00');
 
@@ -702,8 +705,21 @@ app.post('/api/scratch', (req, res) => {
       error: '活動已結束，感謝參與 TINA SHOP！'
     });
   }
+
   try {
     const result = drawTransaction(req.session.discordUser);
+
+    // 只有新抽獎成功才同步，避免重複紀錄
+    if (!result.already) {
+      try {
+        await syncGoogleSheets();
+        console.log('抽獎資料已同步至 Google Sheets');
+      } catch (syncError) {
+        // 試算表同步失敗，不影響已完成的抽獎
+        console.error('Google Sheets 同步失敗：', syncError);
+      }
+    }
+
     return res.json(result);
 
   } catch (error) {
