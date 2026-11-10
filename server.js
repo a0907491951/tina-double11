@@ -791,6 +791,38 @@ app.post('/admin/backup/run', requireBackupAdmin, async (req, res) => {
     );
   }
 });
+/* Google Sheets 手動同步 */
+
+app.post('/admin/sheets/sync', requireBackupAdmin, async (req, res) => {
+  try {
+    const spreadsheetId = await syncGoogleSheets();
+
+    const spreadsheetUrl =
+      `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="zh-Hant">
+      <head>
+        <meta charset="UTF-8">
+        <title>TINA SHOP 同步結果</title>
+      </head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;">
+        <h2>Google 試算表同步成功！♡</h2>
+        <p>抽獎明細與獎項統計已更新。</p>
+        <p><a href="${spreadsheetUrl}" target="_blank">開啟 TINA SHOP 抽獎試算表</a></p>
+        <p><a href="/admin/backup">返回備份管理</a></p>
+      </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('Google Sheets 手動同步失敗：', error);
+    res.status(500).send(
+      '同步失敗，請查看 Render Logs：' + error.message
+    );
+  }
+});
 /* 管理員指定帳號抽獎重置 */
 
 app.get('/admin/test-reset', requireBackupAdmin, (req, res) => {
