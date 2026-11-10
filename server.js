@@ -379,7 +379,7 @@ async function getGoogleSheetsClient() {
   return { sheets, oauth2Client };
 
 async function getOrCreateGoogleSpreadsheet() {
-  const sheets = await getGoogleSheetsClient();
+const { sheets, oauth2Client } = await getGoogleSheetsClient();
 
   const saved = db.prepare(
     'SELECT spreadsheet_id FROM google_sheets_config WHERE id = 1'
@@ -411,7 +411,7 @@ async function getOrCreateGoogleSpreadsheet() {
     throw new Error('缺少 GOOGLE_DRIVE_FOLDER_ID');
   }
 
-    const drive = google.drive({
+const { sheets, oauth2Client } = await getGoogleSheetsClient();
     version: 'v3',
     auth: oauth2Client
   });
@@ -470,6 +470,108 @@ async function getOrCreateGoogleSpreadsheet() {
     sheets,
     spreadsheetId
   };
+}
+
+/* ---------------- TINA SHOP Google Sheets 資料同步 ---------------- */
+
+async function syncGoogleSheets() {
+  const { sheets, spreadsheetId } =
+    await getOrCreateGoogleSpreadsheet();
+
+  // 讀取所有會員的抽獎紀錄
+  const draws = db.prepare(`
+    SELECT discord_id, username, prize_name, created_at
+    FROM draws
+    ORDER BY created_at ASC
+  `).all();
+
+  // 轉換成台灣時間
+  const drawRows = draws.map(row => {
+    const utcDate = new Date(
+      row.created_at.replace(' ', 'T') + 'Z'
+    );
+
+    const taiwanTime = utcDate.toLocaleString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      hour12: false
+    });
+
+    return [
+      row.username,
+      row.discord_id,
+      row.prize_name,
+      taiwanTime
+    ];
+  });
+
+  // 更新抽獎明細
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: '抽獎明細!A2:D'
+  });
+
+  if (drawRows.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: '抽獎明細!A2',
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: drawRows
+      }
+    });
+  }
+
+  // 讀取獎項庫存
+  const inventory = db.prepare(`
+    SELECT prize_id, remaining
+    FROM inventory
+  `).all();
+
+  // 計算各獎項中獎數量
+  const counts = db.prepare(`
+    SELECT prize_id, COUNT(*) AS total
+    FROM draws
+    GROUP BY prize_id
+  `).all();
+
+  const countMap = {};
+  counts.forEach(row => {
+    countMap[row.prize_id] = row.total;
+  });
+
+  // 整理獎項統計
+  const statsRows = inventory.map(item => {
+    const prizeName = PRIZES[item.prize_id]?.name || item.prize_id;
+
+    return [
+      prizeName,
+      countMap[item.prize_id] || 0,
+      item.remaining < 0 ? '不限量' : item.remaining
+    ];
+  });
+
+  // 更新獎項統計
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: '獎項統計!A2:C'
+  });
+
+  if (statsRows.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: '獎項統計!A2',
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: statsRows
+      }
+    });
+  }
+
+  console.log(
+    `Google Sheets 同步成功：${drawRows.length} 筆抽獎紀錄`
+  );
+
+  return spreadsheetId;
 }
 
 /* 網站 API */
